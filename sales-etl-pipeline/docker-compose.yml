@@ -1,0 +1,50 @@
+services:
+  pg_source:
+    image: postgres:16
+    container_name: pg_source
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  ch_dwh:
+    image: clickhouse/clickhouse-server:latest
+    container_name: ch_dwh
+    ports:
+      - "9000:9000"  
+      - "8123:8123"  
+    volumes:
+      - ch_data:/var/lib/clickhouse
+
+  airflow:
+    image: apache/airflow:2.9.2-python3.11
+    container_name: airflow
+    depends_on:
+      - pg_source
+      - ch_dwh
+    user: "${AIRFLOW_UID:-50000}:0"  
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW_HOME: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    ports:
+      - "8088:8080"   
+    volumes:
+      - ./:/opt/airflow            
+      - airflow_logs:/opt/airflow/logs  
+    command: >
+      bash -lc "
+      mkdir -p /opt/airflow/logs &&
+      pip install --no-cache-dir pandas psycopg2-binary python-dotenv clickhouse-driver &&
+      airflow db init &&
+      airflow users create --role Admin --username admin --password admin --firstname Admin --lastname User --email admin@example.com || true &&
+      airflow webserver -H 0.0.0.0 -p 8080 & airflow scheduler & sleep infinity
+      "
+
+volumes:
+  pg_data:
+  ch_data:
+  airflow_logs:
